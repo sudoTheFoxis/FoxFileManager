@@ -1,0 +1,18 @@
+{
+  "name": "fox_file_manager",
+  "main": "FoxFileManager.js",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "node FoxFileManager.js",
+    "devwatch": "nodemon FoxFileManager.js"
+  },
+  "keywords": [],
+  "author": "sudoTheFoxis",
+  "license": "GPL-3.0-only",
+  "description": "advanced better-sqlite3 based file organizer and manager",
+  "dependencies": {
+    "better-sqlite3": "^11.4.0",
+    "nodemon": "^3.1.7",
+    "sharp": "^0.33.5"
+  }
+}
