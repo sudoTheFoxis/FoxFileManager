@@ -9,12 +9,15 @@ class FoxFileManager {
          * @description advanced nodejs file manager with support for isolated spaces in one instance
          * @param {Object}  options
          * @param {Object}  options.workspace       default dir where FFM's files will be stored
+         * @param {Array}   options.metaValues      metadata values
          * @param {Boolean} options.skipinit        if true, init will be skipped for all databases
          * @param {Object}  options.DB
          * @param {String}  options.DB.rootdir      path belonging to a given database
          * @param {String}  options.DB.workspace    path where database files will be located (not the managed files)
          * @param {String}  options.DB.thumbdir     the path where the thumbnails unique to the database will be stored
+         * @param {Array}   options.DB.metaValues      metadata values
          * @param {Boolean} options.DB.skipinit     if true, init will be skipped for given database
+         * @param {Boolean} options.DB.force        when true, override existing database if exists
          */
         // console io functions
         this.info =  typeof(options?.IOFinfo) == "function"  ? options.IOFinfo : (msg) => { console.info( `[FFM]\x1b[32m[info]\x1b[0m:  ${msg}`) };
@@ -48,6 +51,7 @@ class FoxFileManager {
                 workspace: value?.workspace ?? this.workspace,
                 thumbdir: value?.thumbdir ?? this.thumbdir,
                 skipinit: value?.skipinit ?? this.skipinit,
+                metaValues: value.metaValues ?? options.metaValues,
                 force: value?.force ?? this.force,
             }))
         })
@@ -132,7 +136,7 @@ class FoxFileManager {
 module.exports = FoxFileManager
 
 dev()
-function dev() {
+async function dev() {
     console.log("\n\n");
     const FFM = new FoxFileManager({
         workspace: "../workspace",
@@ -143,31 +147,39 @@ function dev() {
                 rootdir: "$workspace/rootdir",
                 thumbdir: "$workspace/thumbnails",
                 //skipinit: true,
+                force: true
             }
         }
-    })
+    });
+    
     let A_DB = FFM.DB.get("A");
-    A_DB.destroy()
-    A_DB.init()
+    
+    A_DB.destroy();
+    A_DB.init();
 
-    /*
-    A_DB.tag.add(
-        { name: "dev" },
-        { name: "temp" },
-        { name: "test", tags: ["temp", "dev"] },
-        { name: "image" },
-    )
-    A_DB.file.add(
-        { path: "/test/1.jpg", tags: ["test","dev","image"] },
-        { path: "/test/2.jpg", tags: ["test","dev","image"] },
-        { path: "/test/3.jpg", tags: ["test","dev","image"] },
-        { path: "/test/4.jpg", tags: ["dev","image"] },
-        { path: "/test/5.jpg", tags: ["dev","image"] },
-        { path: "/test/6.jpg", tags: ["dev","image"] },
-        { path: "/test/7.jpg", tags: ["dev","image"] },
+    let res;
+
+    res = await A_DB.files.add(
+        { path: "/img/1.jpg" },
+        { path: "/img/2.jpg" },
+        { path: "/img/3.jpg" },
+        { path: "/img/4.jpg" },
+        { path: "/img/5.jpg" },
+        { path: "/img/6.jpg" },
+        { path: "/img/7.jpg" },
+        "/vid/8.mp4",
         "/test.txt"
-    );*/
-    //console.log(A_DB.file.getID())
+    );
+    //console.log(res);
+
+    res = await A_DB.thumbs.add(res.map(f => { return {target: f.path, id: f.id} }));
+    //console.log(res);
+
+    //res = A_DB.files.get(res)
+    //console.log(res);
+
+    res = A_DB.thumbs.get(res)
+    console.log(res);
 }
 
 

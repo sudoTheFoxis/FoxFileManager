@@ -13,3 +13,11 @@ module.exports = class {
         
     }
 }
+
+
+
+
+/*** * * * * * * * * * * * * * * * * * * * * *
+ * @author sudoTheFoxis                      *
+ * @github https://github.com/sudoTheFoxis   *
+ * * * * * * * * * * * * * * * * * * * * * * */
