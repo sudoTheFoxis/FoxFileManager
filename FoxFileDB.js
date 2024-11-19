@@ -5,6 +5,7 @@ const TagsHandler = require('./Handlers/TagsHandler.js');
 const FilesHandler = require('./Handlers/FilesHandler.js');
 const ThumbsHandler = require('./Handlers/ThumbsHandler.js');
 const EntriesHandler = require('./Handlers/EntriesHandler.js');
+const MetadataHandler = require('./Handlers/MetadataHandler.js');
 
 module.exports = class FoxFileDB {
     constructor(options) {
@@ -50,6 +51,27 @@ module.exports = class FoxFileDB {
             }
             return dir
         }
+        // DateTime parser
+        this.parseDate = (date) => {
+            let GMT = false;
+            if (date) {
+                date = date.trim();
+                if (date.endsWith("GMT")) {
+                    date=date.slice(0, -3).trim();GMT=true;
+                }
+                if (/^\d{1,2}:\d{2}:\d{2}$/.test(date)) { // provided only time
+                    date = new Date(`${new Date().toISOString().split("T")[0]} ${date} ${GMT?'GMT':''}`);
+                } else if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(date)) { // provided only date
+                    date = new Date(`${date} ${new Date().toISOString().split("T")[1].replace(/\..+/, '')} GMT`);
+                } else { // provided date and time
+                    date = new Date(`${date} ${GMT?'GMT':''}`);
+                }
+            }
+            if (!date || isNaN(date)) {
+                date = new Date();
+            }
+            return date.toISOString().replace(/T/, ' ').replace(/\..+/, '') + " GMT";
+        }
         // initialize directories
         if (!options.workspace) { this.error("@init workspace not provided"); process.exit(1) }
         this.workspace = this.parsePath(options.workspace, true).join("/");
@@ -60,83 +82,11 @@ module.exports = class FoxFileDB {
         if(!options.thumbdir) { this.error("@init rootdir not provided"); process.exit(1) }
         this.thumbdir = this.parsePath(options.thumbdir, true).join("/");
 
-        // initialize metadata handling
-        this.MimeMap = new Map();
-        this.MimeEntry = (mime) => {
-            if(typeof(mime) != "string") return null;
-            let res = this.MimeMap.get(mime) ?? this.MimeMap.get(mime.split('/')[0]);
-            if (!res) res = this.MimeMap.get("default") ?? null;
-            return res;
-        }
-        this.metaValues = options.metaValues ?? [
-            {
-                name: "Common",     // table name
-                types: ["default"], // mime types that will be binded to this table (default - all that has not been binded)
-                v: [                // values that this tabble will contain ( n - name, t - type, i - index the value )
-                    { n: "metadata",   t: "object", i: false },
-                    { n: "type",       t: "number", i: true },
-                    { n: "keywords",   t: "string", i: false },
-                    { n: "genre",      t: "string", i: false },
-                    { n: "date",       t: "string", i: false },
-                    { n: "author",     t: "string", i: false },
-                    { n: "publisher",  t: "string", i: false },
-                    { n: "copyright",  t: "string", i: false }
-                ]
-            },
-            {
-                name: "Video",
-                types: ["video"],
-                v: [
-                    { n: "height",      t: "number", i: false },
-                    { n: "width",       t: "number", i: false },
-                    { n: "duration",    t: "number", i: false },
-                    { n: "bitrate",     t: "number", i: false },
-                    { n: "frame_rate",  t: "number", i: false },
-                    { n: "location",    t: "string", i: false }
-                ],
-            },
-            {
-                name: "Image",
-                types: ["image"],
-                v: [
-                    { n: "height",      t: "number", i: false },
-                    { n: "width",       t: "number", i: false },
-                    { n: "location",    t: "string", i: false }
-                ],
-            },
-            {
-                name: "Audio",
-                types: ["audio"],
-                v: [
-                    { n: "bitrate",     t: "number", i: false },
-                    { n: "sample_rate", t: "number", i: false },
-                    { n: "duration",    t: "number", i: false }
-                ],
-            },
-            {
-                name: "Model",
-                types: ["model"],
-                v: [
-                    { n: "vertices",    t: "number", i: false },
-                    { n: "polygons",    t: "number", i: false }
-                ],
-            },
-            {
-                name: "Project",
-                types: [],
-                v: [
-                    { n: "program",     t: "string", i: false },
-                    { n: "project_dir", t: "string", i: false },
-                    { n: "started",     t: "string", i: false },
-                    { n: "status",      t: "string", i: false }
-                ]
-            }
-        ];
-
         // init
         if(options?.skipinit != true) this.init(options.force);
     }
     init(force) {
+        this.debug("@init initializing database")
         // validate directories
         try {
             // rootdir
@@ -161,7 +111,7 @@ module.exports = class FoxFileDB {
             if ( fs.existsSync(`${this.workspace}/${this.name}.sqlite3`) ) {
                 if (force == true) {
                     fs.rmSync(`${this.workspace}/${this.name}.sqlite3`);
-                    this.debug(`force == true, overriding existing database: ${this.workspace}/${this.name}.sqlite3`);
+                    this.warn(`force == true, overriding existing database: ${this.workspace}/${this.name}.sqlite3`);
                 } else {
                     this.info(`using existing database: ${this.workspace}/${this.name}.sqlite3`)
                 }
@@ -169,25 +119,6 @@ module.exports = class FoxFileDB {
         } catch (err) {
             this.error(`@init: \n ${err}`, true);
         }
-        // parse matadata values
-        let tables = "";
-        this.MimeMap.clear();
-        this.metaValues.forEach(table => {
-            table.types?.forEach(t => {
-                if (this.MimeMap.has(t)) {
-                    this.warn("key already exists in MimeMap:", t)
-                } else {
-                    this.MimeMap.set(t, `Entries_Meta_${table.name}`);
-                }
-            });
-            tables+=`CREATE TABLE IF NOT EXISTS Entries_Meta_${table.name} (\n    entry INTEGER NOT NULL PRIMARY KEY REFERENCES Entries(id) ON DELETE CASCADE,`;
-            let indexes = "";
-            table.v.forEach(v => {
-                tables+=`\n    ${v.n} ${v.t == "number" ? "INTEGER" : "TEXT"},`;
-                if (v.i == true) indexes+=`CREATE INDEX IF NOT EXISTS idx_Entries_Meta_${table.name}_${v.n} ON Entries_Meta_${table.name}(${v.n});\n`;
-            })
-            tables = tables.slice(0,-1)+"\n);\n"+indexes;
-        });
         // initialize DataBase
         this.DB = new SQLite3(`${this.workspace}/${this.name}.sqlite3`).exec(`
             CREATE TABLE IF NOT EXISTS Thumbs (
@@ -214,7 +145,8 @@ module.exports = class FoxFileDB {
             CREATE INDEX IF NOT EXISTS idx_Files_path ON Files(path);
             CREATE TABLE IF NOT EXISTS Files_Entries (
                 file        INTEGER     NOT NULL REFERENCES Files(id) ON DELETE CASCADE,
-                entry       INTEGER     NOT NULL REFERENCES Entries(id) ON DELETE CASCADE
+                entry       INTEGER     NOT NULL REFERENCES Entries(id) ON DELETE CASCADE,
+                UNIQUE(file, entry)
             );
             CREATE INDEX IF NOT EXISTS idx_Files_Entries_file ON Files_Entries(file);
             CREATE INDEX IF NOT EXISTS idx_Files_Entries_entry ON Files_Entries(entry);
@@ -223,15 +155,13 @@ module.exports = class FoxFileDB {
 
             CREATE TABLE IF NOT EXISTS Entries (
                 id          INTEGER     NOT NULL PRIMARY KEY AUTOINCREMENT,
-                file_layout TEXT        ,
+                filemap     TEXT        ,
                 name        TEXT        ,
                 description TEXT        ,
                 created     TIMESTAMP   NOT NULL,
                 modified    TIMESTAMP   NOT NULL,
                 hidden      INTEGER     
             );
-                
-            ${tables}
 
 
 
@@ -243,13 +173,15 @@ module.exports = class FoxFileDB {
             CREATE INDEX IF NOT EXISTS idx_Tags_Entries_tag ON Tags_Entries(tag);
             CREATE TABLE IF NOT EXISTS Tags (
                 id          INTEGER     NOT NULL PRIMARY KEY AUTOINCREMENT,
-                name        TEXT        NOT NULL,
+                name        TEXT        UNIQUE NOT NULL,
                 description TEXT        ,
                 color       TEXT        
             );
             CREATE TABLE IF NOT EXISTS Tags_Tags (
                 parent      INTEGER     NOT NULL REFERENCES Tags(id) ON DELETE CASCADE,
-                child       INTEGER     NOT NULL REFERENCES Tags(id) ON DELETE CASCADE
+                child       INTEGER     NOT NULL REFERENCES Tags(id) ON DELETE CASCADE,
+                negate      INTEGER     ,
+                UNIQUE(parent, child)
             );
             CREATE INDEX IF NOT EXISTS idx_Tags_Tags_parent ON Tags_Tags(parent);
             CREATE INDEX IF NOT EXISTS idx_Tags_Tags_child ON Tags_Tags(child);
@@ -260,8 +192,43 @@ module.exports = class FoxFileDB {
         this.files      = new FilesHandler(this);
         this.thumbs     = new ThumbsHandler(this);
         this.entries    = new EntriesHandler(this);
+        //this.meta       = new MetadataHandler(this); // i dont have the mental health to do it now
+    }
+    return() {
+        let items = this.DB.prepare(`
+            SELECT name, type, tbl_name 
+            FROM sqlite_master 
+            WHERE type IN ('table', 'index')
+        `).all();
+
+        let structure = {table: [], index: []};
+
+        items.forEach((item) => {
+            if (item.type === 'table') {
+                structure.table.push({
+                    name: item.name,
+                    values: this.DB.prepare(`PRAGMA table_info(${item.name})`).all().map((column) => ({
+                        name: column.name,
+                        type: column.type,
+                        opts: `${column.notnull ? "NOT NULL" : ""}${column.pk ? ", PRIMARY KEY" : ""}`.trim()
+                    }))
+                });
+            } else if (item.type === 'index') {
+                structure.index.push({
+                    name: item.name,
+                    values: this.DB.prepare(`PRAGMA index_info(${item.name})`).all().map((info) => ({
+                        name: info.name,
+                        seqno: info.seqno
+                    })),
+                    relatedTable: item.tbl_name
+                });
+            }
+        });
+
+        return structure;
     }
     destroy() {
+        this.debug("@destroy deleting database")
         fs.rmSync(`${this.workspace}/${this.name}.sqlite3`)
     }
 }
@@ -271,6 +238,7 @@ module.exports = class FoxFileDB {
 // Use DBML to define your database structure
 // Docs: https://dbml.dbdiagram.io/docs
 // https://dbdiagram.io
+
 
 // thumbnail
 Table Thumbs {
@@ -294,7 +262,7 @@ Table Files {
 Table Entries {
   note: "stores basic info about files"
   id          integer   [not null, pk, increment]
-  file_layout text      [note:"in what order files will be grouped"]
+  filemap     text      [note:"in what order files will be grouped"]
   name        text      []
   description text      []
   created     timestamp [not null]
@@ -312,17 +280,18 @@ Table Tags_Entries {
   tag         integer   [not null]
 }
 // metadata
-Table Entries_Meta_Common {
-  entry       integer   [not null, pk]
-  metadata    text      [note:"object of custom metadata"]
-  type        text      [note:"file type"]
+Table Meta_Main {
+  id          integer   [not null, pk]
+  metadata    text      [note:"invalid/custom keys are kept here as string/object"]
+  group       integer   [note:"number of group (mainly for optimalization purpose)"]
+  type        text      [note:"mime type"]
   keywords    text      []
   author      text      []
   publisher   text      []
   copyright   text      []
 }
-Table Entries_Meta_Video {
-  entry       integer   [not null, pk]
+Table Meta_Video {
+  id          integer   [not null, pk]
   height      integer   [note:"pixels"]
   width       integer   [note:"pixels"]
   duration    integer   [note:"seconds"]
@@ -332,27 +301,27 @@ Table Entries_Meta_Video {
   genre       text      []
   location    text      []
 }
-Table Entries_Meta_Image {
-  entry       integer   [not null, pk]
+Table Meta_Image {
+  id          integer   [not null, pk]
   height      integer   [note:"pixels"]
   width       integer   [note:"pixels"]
   color_depth integer   [note:"bytes"]
   location    text      []
 }
-Table Entries_Meta_Audio {
-  entry       integer   [not null, pk]
+Table Meta_Audio {
+  id          integer   [not null, pk]
   bitrate     integer   [note:"bytes"]
   sample_rate integer   [note:"Hz"]
   genre       text      []
 }
-Table Entries_Meta_Model {
-  entry       integer   [not null, pk]
+Table Meta_Model {
+  id          integer   [not null, pk]
   vertices    integer   [note:"number of verticies"]
   polygons    integer   [note:"number of polygons"]
   genre       text      []
 }
-Table Entries_Meta_Project {
-  entry       integer   [not null, pk]
+Table Meta_Project {
+  id          integer   [not null, pk]
   program     text      [note:"the name of program where the project is made in"]
   project_dir text      [note:"path to the folder where the project is located in"]
   started     text      [note:"when the project started"]
@@ -377,12 +346,12 @@ ref: Thumbs.id - Files.id
 ref: Files.id > Files_Entries.file
 ref: Entries.id > Files_Entries.entry
 ref: Tags_Entries.entry > Entries.id
-ref: Entries_Meta_Common.entry - Entries.id
-ref: Entries_Meta_Video.entry - Entries.id
-ref: Entries_Meta_Images.entry - Entries.id
-ref: Entries_Meta_Audio.entry - Entries.id
-ref: Entries_Meta_Models.entry - Entries.id
-ref: Entries_Meta_Projects.entry - Entries.id
+ref: Meta_Main.id - Files.id
+ref: Meta_Video.id - Meta_Main.id
+ref: Meta_Image.id - Meta_Main.id
+ref: Meta_Audio.id - Meta_Main.id
+ref: Meta_Model.id - Meta_Main.id
+ref: Meta_Project.id - Meta_Main.id
 ref: Tags.id < Tags_Entries.tag
 ref: Tags_Tags.parent > Tags.id
 ref: Tags_Tags.child > Tags.id
@@ -390,50 +359,78 @@ ref: Tags_Tags.child > Tags.id
 */
 
 /*
-            CREATE TABLE IF NOT EXISTS Entries_Meta_Common (
-                entry       INTEGER     NOT NULL PRIMARY KEY REFERENCES Entries(id) ON DELETE CASCADE,
-                metadata    TEXT        ,
-                type        TEXT        ,
-                keywords    TEXT        ,
-                genre       TEXT        ,
-                author      TEXT        ,
-                publisher   TEXT        ,
-                copyright   TEXT        
-            );
-            CREATE INDEX IF NOT EXISTS idx_Entries_Meta_Common_type ON Entries_Meta_Common(type);
-            CREATE TABLE IF NOT EXISTS Entries_Meta_Video (
-                entry       INTEGER     NOT NULL PRIMARY KEY REFERENCES Entries(id) ON DELETE CASCADE,
-                height      INTEGER     ,
-                width       INTEGER     ,
-                duration    INTEGER     ,
-                bitrate     INTEGER     ,
-                frame_rate  INTEGER     ,
-                location    TEXT        
-            );
-            CREATE TABLE IF NOT EXISTS Entries_Meta_Image (
-                entry       INTEGER     NOT NULL PRIMARY KEY REFERENCES Entries(id) ON DELETE CASCADE,
-                height      INTEGER     ,
-                width       INTEGER     ,
-                location    TEXT        
-            );
-            CREATE TABLE IF NOT EXISTS Entries_Meta_Audio (
-                entry       INTEGER     NOT NULL PRIMARY KEY REFERENCES Entries(id) ON DELETE CASCADE,
-                bitrate     INTEGER     ,
-                sample_rate INTEGER     ,
-                duration    INTEGER     
-            );
-            CREATE TABLE IF NOT EXISTS Entries_Meta_Model (
-                entry       INTEGER     NOT NULL PRIMARY KEY REFERENCES Entries(id) ON DELETE CASCADE,
-                verticles   INTEGER     ,
-                polygons    INTEGER     
-            );
-            CREATE TABLE IF NOT EXISTS Entries_Meta_Project (
-                entry       INTEGER     NOT NULL PRIMARY KEY REFERENCES Entries(id) ON DELETE CASCADE,
-                program     TEXT        ,
-                project_dir TEXT        ,
-                started     TEXT        ,
-                status      TEXT        
-            );
+        // initialize metadata handling
+        this.MimeMap = new Map();
+        this.MimeEntry = (mime) => {
+            if(typeof(mime) != "string") return null;
+            let res = this.MimeMap.get(mime) ?? this.MimeMap.get(mime.split('/')[0]);
+            if (!res) res = this.MimeMap.get("default") ?? null;
+            return res;
+        }
+        this.metaValues = options.metaValues ?? [
+            {
+                name: "Common",     // table name
+                types: ["default"], // mime types that will be binded to this table (default - all that has not been binded)
+                v: {                // values that this tabble will contain ( n - name, t - type, i - index the value )
+                    "metadata":     { t: "object", i: false },
+                    "type":         { t: "number", i: true },
+                    "keywords":     { t: "string", i: false },
+                    "genre":        { t: "string", i: false },
+                    "date":         { t: "string", i: false },
+                    "author":       { t: "string", i: false },
+                    "publisher":    { t: "string", i: false },
+                    "copyright":    { t: "string", i: false }
+                }
+            },
+            {
+                name: "Video",
+                types: ["video"],
+                v: {
+                    "height":       { t: "number", i: false },
+                    "width":        { t: "number", i: false },
+                    "duration":     { t: "number", i: false },
+                    "bitrate":      { t: "number", i: false },
+                    "frame_rate":   { t: "number", i: false },
+                    "location":     { t: "string", i: false }
+                },
+            },
+            {
+                name: "Image",
+                types: ["image"],
+                v: {
+                    "height":       { t: "number", i: false },
+                    "width":        { t: "number", i: false },
+                    "location":     { t: "string", i: false }
+                },
+            },
+            {
+                name: "Audio",
+                types: ["audio"],
+                v: {
+                    "bitrate":      { t: "number", i: false },
+                    "sample_rate":  { t: "number", i: false },
+                    "duration":     { t: "number", i: false }
+                },
+            },
+            {
+                name: "Model",
+                types: ["model"],
+                v: {
+                    "vertices":     { t: "number", i: false },
+                    "polygons":     { t: "number", i: false }
+                },
+            },
+            {
+                name: "Project",
+                types: [],
+                v: {
+                    "program":      { t: "string", i: false },
+                    "project_dir":  { t: "string", i: false },
+                    "started":      { t: "string", i: false },
+                    "status":       { t: "string", i: false }
+                }
+            }
+        ];
 */
 
 

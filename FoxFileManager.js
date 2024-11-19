@@ -154,12 +154,14 @@ async function dev() {
     
     let A_DB = FFM.DB.get("A");
     
-    A_DB.destroy();
-    A_DB.init();
-
-    let res;
-
-    res = await A_DB.files.add(
+    //A_DB.destroy();
+    //A_DB.init();
+    
+    //let rres = A_DB.return()
+    //console.log(...rres.table)
+    
+    //*
+    let fres = await A_DB.files.add(
         { path: "/img/1.jpg" },
         { path: "/img/2.jpg" },
         { path: "/img/3.jpg" },
@@ -169,17 +171,44 @@ async function dev() {
         { path: "/img/7.jpg" },
         "/vid/8.mp4",
         "/test.txt"
-    );
+    );//*/
+    //console.log(fres);
+    //fres = A_DB.files.get(fres)
+    //console.log(fres);
+
+    /*
+    let tres = await A_DB.tags.add(
+        'dev',
+        'dev',
+        {name:'test',color:"#FF4000"},
+        {name:'temp',tags:['dev']}
+    );//*/
+    //console.log(tres);
+    //tres = A_DB.tags.get()
+    //console.log(tres)
+
+    //*
+    let hres = await A_DB.thumbs.add(
+        fres.map(f => { return {target: f.path, id: f.id} })
+    );//*/
+    //console.log(res);
+    //res = A_DB.thumbs.get(res)
     //console.log(res);
 
-    res = await A_DB.thumbs.add(res.map(f => { return {target: f.path, id: f.id} }));
-    //console.log(res);
+    /*
+    eres = await A_DB.entries.add(
+        { name: 'dev entry', filemap: [1,2,3,4,5,6] },
+        { name: 'test entry', filemap: [3,4,5,6] }
+    );//*/
+    //console.log(eres);
+    //eres = A_DB.entries.get()
+    //console.log(eres)
 
-    //res = A_DB.files.get(res)
-    //console.log(res);
-
-    res = A_DB.thumbs.get(res)
-    console.log(res);
+    /*
+    mres = await A_DB.meta.add({id: 1, keywords: ['dev','test'], keys: { height: 250, temp: true, width: 512 }})//*/
+    //console.log(mres[0]);
+    //mres = A_DB.meta.get()
+    //console.log(mres)
 }
 
 

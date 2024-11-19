@@ -44,7 +44,7 @@ module.exports = class {
         this.ThumbGen = async ({ source, mime, name, video }) => {
             let output = `${this.#FF.thumbdir}/temp/${name}.jpg`
             switch (true) {
-                case /^video.*/i.test(mime):
+                case mime.startsWith("video"):
                     let targetTime = await new Promise((resolve, reject) => {
                         ffmpeg.ffprobe(source, (err, metadata) => {
                             if(err){reject();}
@@ -67,12 +67,16 @@ module.exports = class {
                     fs.unlinkSync(tempFilePath);
                     return output;
 
-                case /^image.*/i.test(mime):
+                case mime.startsWith("image"):
                     await sharp(source)
                         .resize({ width: 256, height: 256, fit: 'inside' })
                         .toFile(output);
                     return output;
 
+                case mime.startsWith("audio"):
+                    this.#FF.debug("#thumbs@ThumbGen generating thumbnals for audio files is not supported yet")
+                    return null;
+                    
                 default:
                     return null;
             }
@@ -92,7 +96,7 @@ module.exports = class {
          * @param {String}  thumb.target    path to the file from which the thumbnail will be generated
          * @param {String}  thumb.mime      type of media (image or video, any other will be skipped)
          * @param {String}  thumb.src       custom thumbnail path (baybe in future)
-         * @param {Boolean} thumb.raw       if true, thumb will not be validated
+         * @param {Boolean} thumb.raw       if true, data will not be checked
          */
         // process thumbnail data
         let ProcessThumb = async (thumb) => {
@@ -104,6 +108,7 @@ module.exports = class {
             let res = this.#FF.DB.prepare(`
                 SELECT * FROM Files
                 WHERE id = ?
+                LIMIT 1
             `).get(thumb.id);
             if(!res) return {...thumb,code:404};
             if(!thumb.mime) thumb.mime=res.mime; // if mime not provided
@@ -125,10 +130,13 @@ module.exports = class {
                 if (thumb.hex.length == 3) {
                     thumb.hex = thumb.hex[0] + thumb.hex[0] + thumb.hex[1] + thumb.hex[1] + thumb.hex[2] + thumb.hex[2];
                 }
-                R = parseInt(thumb.hex.slice(0,2),16) / 255;
-                G = parseInt(thumb.hex.slice(2,4),16) / 255;
-                B = parseInt(thumb.hex.slice(4,6),16) / 255;
-            } else {
+                if(/^[0-9A-F]{6}$/i.test(thumb.hex)) {
+                    R = parseInt(thumb.hex.slice(0,2),16) / 255;
+                    G = parseInt(thumb.hex.slice(2,4),16) / 255;
+                    B = parseInt(thumb.hex.slice(4,6),16) / 255;
+                }
+            }
+            if(!R || !G || !B) {
                 let {data} = await sharp(thumb.src)
                     .resize(1, 1).raw().toBuffer({ resolveWithObject: true });
                 R = data[0] / 255;

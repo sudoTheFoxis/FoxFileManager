@@ -14,7 +14,7 @@ module.exports = class {
          * @param {String}  file.path   path to file
          * @param {String}  file.mime   mime type
          * @param {hash}    file.hash   file checksum/hash
-         * @param {Boolean} file.raw    if true, file will not be validated
+         * @param {Boolean} file.raw    if true, data will not be checked
          */
         // process given items
         let ProcessFiles = async (file) => {
@@ -71,13 +71,13 @@ module.exports = class {
                 WHERE NOT EXISTS (SELECT 1 FROM Files WHERE file = ? AND path = ?)
             `);
             return files.map((file)=>{
-                if(file.code)return{path:(file.path=="/"?"":file.path)+(file.file?"/"+file.file:""),code:file.code}; // file is invalid 4XX
-                let{changes:chk,lastInsertRowid:id}=insertFile.run(
+                if(file.code)return{id:undefined,path:(file.path=="/"?"":file.path)+(file.file?"/"+file.file:""),code:file.code}; // file is invalid 4XX
+                let{changes:chk,lastInsertRowid:id}=insertFile.run( // insert into database
                     file.file,file.path,file.mime,file.hash,
                     file.file,file.path
-                ); // insert into database
-                if(chk<1)return{path:(file.path=="/"?"":file.path)+"/"+file.file,id:null,code:409}; // file exists 409
-                return{path:(file.path=="/"?"":file.path)+"/"+file.file,mime:file.mime,code:201,id}; // sucess 201
+                );
+                if(chk<1)return{id:undefined,path:(file.path=="/"?"":file.path)+"/"+file.file,code:409}; // file exists 409
+                return{id,path:(file.path=="/"?"":file.path)+"/"+file.file,mime:file.mime,code:201}; // sucess 201
             });
         });
         return InsertFiles(files);
