@@ -1,0 +1,8 @@
+[ ] - basic file manager functionality (view/download/upload/modify)
+[ ] - plugin system
+[ ] - file organization (with data base)
+[ ] - thumbnails support
+[ ] - working trash system
+[ ] - backup/export/import system
+[ ] - code optymalizations/cleanup
+[ ] - rewrite to faster laungue? (maybe)
